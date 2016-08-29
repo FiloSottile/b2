@@ -1,3 +1,14 @@
+// Package b2 provides an idiomatic, efficient interface to Backblaze B2 Cloud Storage.
+//
+// Uploading
+//
+// Uploads to B2 require a SHA1 header, so the hash of the file must be known
+// before the upload starts. The (*Bucket).Upload API tries its best not to
+// buffer the entire file in memory, and it will avoid it if passed either a
+// bytes.Buffer or a io.ReadSeeker.
+//
+// If you know the SHA1 and the length of the file in advance, you can use
+// (*Bucket).UploadWithSHA1.
 package b2
 
 import (
@@ -11,30 +22,35 @@ import (
 	"net/http"
 )
 
-// B2Error is the decoded B2 JSON error return value. It's not the only type of
+// Error is the decoded B2 JSON error return value. It's not the only type of
 // error returned by this package, you can check for it with a type assertion.
-type B2Error struct {
+type Error struct {
 	Code    string
 	Message string
 	Status  int
 }
 
-func (e *B2Error) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("b2 remote error [%s]: %s", e.Code, e.Message)
 }
 
 const (
-	defaultApiUrl = "https://api.backblaze.com"
+	defaultAPIURL = "https://api.backblaze.com"
 	apiPath       = "/b2api/v1/"
 )
 
 // A Client is an authenticated API client. It is safe for concurrent use and should
 // be reused to take advantage of connection and URL reuse.
 type Client struct {
-	AccountID          string
+	AccountID string
+	ApiURL    string
+
+	// DownloadURL is the base URL for file downloads. It is supposed
+	// to never change for the same account.
+	DownloadURL string
+	// AuthorizationToken is the value to pass in the Authorization
+	// header of all private calls. This is valid for at most 24 hours.
 	AuthorizationToken string
-	ApiURL             string
-	DownloadURL        string
 
 	hc *http.Client
 }
@@ -46,7 +62,7 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 		httpClient = http.DefaultClient
 	}
 
-	r, err := http.NewRequest("GET", defaultApiUrl+apiPath+"b2_authorize_account", nil)
+	r, err := http.NewRequest("GET", defaultAPIURL+apiPath+"b2_authorize_account", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +76,7 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 	defer drainAndClose(res.Body)
 
 	if res.StatusCode != 200 {
-		b2Err := &B2Error{}
+		b2Err := &Error{}
 		if err := json.NewDecoder(res.Body).Decode(b2Err); err != nil {
 			return nil, fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
 		}
@@ -103,7 +119,7 @@ func (c *Client) doRequest(endpoint string, params map[string]string) (*http.Res
 
 	if res.StatusCode != 200 {
 		defer drainAndClose(res.Body)
-		b2Err := &B2Error{}
+		b2Err := &Error{}
 		if err := json.NewDecoder(res.Body).Decode(b2Err); err != nil {
 			return nil, fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
 		}
@@ -123,17 +139,14 @@ func drainAndClose(body io.ReadCloser) {
 // A Bucket is bound to the Client that created it. It is safe for concurrent use and
 // should be reused to take advantage of connection and URL reuse.
 type Bucket struct {
-	ID string `json:"bucketId"`
+	ID string
 	c  *Client
 }
 
 // BucketByID returns a Bucket bound to the Client. It does NOT check that the
 // bucket actually exists, or perform any network operation.
-func (c *Client) BucketByID(bucketID string) *Bucket {
-	return &Bucket{
-		ID: bucketID,
-		c:  c,
-	}
+func (c *Client) BucketByID(id string) *Bucket {
+	return &Bucket{ID: id, c: c}
 }
 
 // Buckets returns a map of bucket names to Bucket objects (b2_list_buckets).
@@ -179,11 +192,15 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*Bucket, error) {
 		return nil, err
 	}
 	defer drainAndClose(res.Body)
-	bucket := &Bucket{c: c}
-	if err := json.NewDecoder(res.Body).Decode(bucket); err != nil {
+	var bucket struct {
+		BucketID string
+	}
+	if err := json.NewDecoder(res.Body).Decode(&bucket); err != nil {
 		return nil, err
 	}
-	return bucket, nil
+	return &Bucket{
+		c: c, ID: bucket.BucketID,
+	}, nil
 }
 
 // Delete calls b2_delete_bucket. After this call succeeds the Bucket object

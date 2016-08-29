@@ -85,6 +85,7 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1sum string, len
 	if err != nil {
 		return "", err
 	}
+	defer drainAndClose(res.Body)
 	var fileRes struct {
 		FileID string
 	}
