@@ -39,7 +39,10 @@ func TestBucketLifecycle(t *testing.T) {
 	rand.Read(r)
 	name := "test-" + hex.EncodeToString(r)
 
-	b, err := c.CreateBucket(name, false)
+	if _, err := c.BucketByName(name, false); err == nil {
+		t.Fatal("bucket exists?")
+	}
+	b, err := c.BucketByName(name, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,19 +50,27 @@ func TestBucketLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bb, ok := buckets[name]; !ok {
-		t.Fatal("Bucket did not appear in Buckets()")
-	} else if bb.ID != b.ID {
-		t.Fatal("Bucket ID mismatch:", b.ID, bb.ID)
+	found := false
+	for _, bb := range buckets {
+		if bb.Name == name {
+			found = true
+			if bb.ID != b.ID {
+				t.Fatal("Bucket ID mismatch:", b.ID, bb.ID)
+			}
+			if bb.Type != "allPrivate" {
+				t.Fatal("Bucket type mismatch:", bb.Type)
+			}
+		}
 	}
+	if !found {
+		t.Fatal("Bucket did not appear in Buckets()")
+	}
+
 	if err := b.Delete(); err != nil {
 		t.Fatal(err)
 	}
-	buckets, err = c.Buckets()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := buckets[name]; ok {
-		t.Fatal("Bucket did not disappear from Buckets()")
+
+	if _, err := c.BucketByName(name, false); err == nil {
+		t.Fatal("Bucket did not disappear")
 	}
 }

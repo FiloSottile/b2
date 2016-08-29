@@ -147,14 +147,41 @@ type Bucket struct {
 	uploadURLsMu sync.Mutex
 }
 
+// BucketInfo is an extended Bucket object with metadata.
+type BucketInfo struct {
+	Bucket
+
+	Name string
+	Type string
+}
+
 // BucketByID returns a Bucket bound to the Client. It does NOT check that the
 // bucket actually exists, or perform any network operation.
 func (c *Client) BucketByID(id string) *Bucket {
 	return &Bucket{ID: id, c: c}
 }
 
-// Buckets returns a map of bucket names to Bucket objects (b2_list_buckets).
-func (c *Client) Buckets() (map[string]*Bucket, error) {
+// BucketByName returns the Bucket with the given name. If such a bucket is not
+// found and createIfNotExists is true, CreateBucket is called with allPublic set
+// to false. Otherwise, an error is returned.
+func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo, error) {
+	bs, err := c.Buckets()
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range bs {
+		if b.Name == name {
+			return b, nil
+		}
+	}
+	if !createIfNotExists {
+		return nil, errors.New("bucket not found: " + name)
+	}
+	return c.CreateBucket(name, false)
+}
+
+// Buckets returns a list of buckets sorted by name.
+func (c *Client) Buckets() ([]*BucketInfo, error) {
 	res, err := c.doRequest("b2_list_buckets", map[string]string{
 		"accountId": c.AccountID,
 	})
@@ -164,25 +191,29 @@ func (c *Client) Buckets() (map[string]*Bucket, error) {
 	defer drainAndClose(res.Body)
 	var buckets struct {
 		Buckets []struct {
-			BucketID, BucketName string
+			BucketID, BucketName, BucketType string
 		}
 	}
 	if err := json.NewDecoder(res.Body).Decode(&buckets); err != nil {
 		return nil, err
 	}
-	m := make(map[string]*Bucket)
+	var r []*BucketInfo
 	for _, b := range buckets.Buckets {
-		m[b.BucketName] = &Bucket{
-			ID: b.BucketID,
-			c:  c,
-		}
+		r = append(r, &BucketInfo{
+			Bucket: Bucket{
+				ID: b.BucketID,
+				c:  c,
+			},
+			Name: b.BucketName,
+			Type: b.BucketType,
+		})
 	}
-	return m, nil
+	return r, nil
 }
 
 // CreateBucket creates a bucket with b2_create_bucket. If allPublic is true,
 // files in this bucket can be downloaded by anybody.
-func (c *Client) CreateBucket(name string, allPublic bool) (*Bucket, error) {
+func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) {
 	bucketType := "allPrivate"
 	if allPublic {
 		bucketType = "allPublic"
@@ -202,8 +233,12 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*Bucket, error) {
 	if err := json.NewDecoder(res.Body).Decode(&bucket); err != nil {
 		return nil, err
 	}
-	return &Bucket{
-		c: c, ID: bucket.BucketID,
+	return &BucketInfo{
+		Bucket: Bucket{
+			c: c, ID: bucket.BucketID,
+		},
+		Name: name,
+		Type: bucketType,
 	}, nil
 }
 
