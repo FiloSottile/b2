@@ -85,10 +85,6 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 }
 
 func (c *Client) doRequest(endpoint string, params map[string]string) (*http.Response, error) {
-	if params == nil {
-		params = make(map[string]string)
-	}
-	params["accountId"] = c.AccountID
 	body, err := json.Marshal(params)
 	if err != nil {
 		return nil, err
@@ -142,7 +138,9 @@ func (c *Client) BucketByID(bucketID string) *Bucket {
 
 // Buckets returns a map of bucket names to Bucket objects (b2_list_buckets).
 func (c *Client) Buckets() (map[string]*Bucket, error) {
-	res, err := c.doRequest("b2_list_buckets", nil)
+	res, err := c.doRequest("b2_list_buckets", map[string]string{
+		"accountId": c.AccountID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +171,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*Bucket, error) {
 		bucketType = "allPublic"
 	}
 	res, err := c.doRequest("b2_create_bucket", map[string]string{
+		"accountId":  c.AccountID,
 		"bucketName": name,
 		"bucketType": bucketType,
 	})
@@ -191,7 +190,8 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*Bucket, error) {
 // becomes invalid and any other calls will fail.
 func (b *Bucket) Delete() error {
 	res, err := b.c.doRequest("b2_delete_bucket", map[string]string{
-		"bucketId": b.ID,
+		"accountId": b.c.AccountID,
+		"bucketId":  b.ID,
 	})
 	if err != nil {
 		return err
