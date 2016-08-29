@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 )
 
 // Error is the decoded B2 JSON error return value. It's not the only type of
@@ -141,6 +142,9 @@ func drainAndClose(body io.ReadCloser) {
 type Bucket struct {
 	ID string
 	c  *Client
+
+	uploadURLs   []*uploadURL
+	uploadURLsMu sync.Mutex
 }
 
 // BucketByID returns a Bucket bound to the Client. It does NOT check that the
