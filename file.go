@@ -2,6 +2,7 @@ package b2
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -85,58 +86,132 @@ func (c *Client) GetFileInfoByID(id string) (*FileInfo, error) {
 // If the file doesn't exist, (nil, nil) is returned.
 // If multiple versions of the file exist, only the latest is returned.
 func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
-	res, _, err := b.ListFiles(name, 1)
-	if err != nil || len(res) == 0 {
-		return nil, err
+	l := b.ListFiles(name, 1)
+	if l.Next() {
+		if l.FileInfo().Name == name {
+			return l.FileInfo(), nil
+		}
 	}
-	if res[0].Name == name {
-		return res[0], nil
-	}
-	return nil, nil // the file in res is the next existing one
+	return nil, l.Err()
 }
 
-// ListFiles returns at most maxCount files in the Bucket, alphabetically sorted,
-// starting from the file named fromName (included if it exists).
+// A Listing is the result of (*Bucket).ListFiles[Versions].
+// It works like sql.Rows: use Next to advance and then FileInfo.
+// Check Err once Next returns false. It handles pagination transparently.
 //
-// If there are files left in the bucket, next is set to the value you should pass
-// as fromName to continue iterating. To iterate all files in a bucket do:
+//     l := b.ListFiles("", 50)
+//     for l.Next() {
+//         fi := l.FileInfo()
+//         ...
+//     }
+//     if err := l.Err(); err != nil {
+//         ...
+//     }
 //
-// 	for fromName := new(string); fromName != nil; {
-//		var res []*FileInfo
-//		var err error
-// 		res, fromName, err = b.ListFiles(*fromName, 100)
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		for _, fi := range res {
-//			// ...
-//		}
-// 	}
-//
-// ListFiles only returns the most recent version of each file, and does not return
-// hidden files. To get those, use ListFilesVersions.
-func (b *Bucket) ListFiles(fromName string, maxCount int) (res []*FileInfo, next *string, err error) {
-	r, err := b.c.doRequest("b2_list_file_names", map[string]interface{}{
-		"bucketId":      b.ID,
-		"startFileName": fromName,
-		"maxFileCount":  maxCount,
-	})
+type Listing struct {
+	b                *Bucket
+	versions         bool
+	pageCount        int
+	nextName, nextID *string
+	objects          []*FileInfo // in reverse order
+	err              error
+}
+
+// Next calls the list API and prepares the FileInfo results.
+// It returns true on success, or false if there is no next result
+// row or an error happened while preparing it. Err should be
+// consulted to distinguish between the two cases.
+func (l *Listing) Next() bool {
+	if l.err != nil {
+		return false
+	}
+	if len(l.objects) != 0 {
+		l.objects = l.objects[:len(l.objects)-1]
+	}
+	if len(l.objects) != 0 {
+		return true
+	}
+	if l.nextName == nil {
+		return false // end of iteration
+	}
+
+	data := map[string]interface{}{
+		"bucketId":      l.b.ID,
+		"startFileName": *l.nextName,
+		"maxFileCount":  l.pageCount,
+	}
+	endpoint := "b2_list_file_names"
+	if l.versions {
+		endpoint = "b2_list_file_versions"
+	}
+	if l.nextID != nil && *l.nextID != "" {
+		data["startFileId"] = *l.nextID
+	}
+	r, err := l.b.c.doRequest(endpoint, data)
 	if err != nil {
-		return nil, nil, err
+		l.err = err
+		return false
 	}
 	defer drainAndClose(r.Body)
 
 	var x struct {
 		Files        []fileInfoObj
 		NextFileName *string
+		NextFileID   *string
 	}
-	if err := json.NewDecoder(r.Body).Decode(&x); err != nil {
-		return nil, nil, err
-	}
-
-	for _, fi := range x.Files {
-		res = append(res, fi.makeFileInfo())
+	if l.err = json.NewDecoder(r.Body).Decode(&x); l.err != nil {
+		return false
 	}
 
-	return res, x.NextFileName, nil
+	l.objects = make([]*FileInfo, len(x.Files))
+	for i, f := range x.Files {
+		l.objects[len(l.objects)-1-i] = f.makeFileInfo()
+	}
+	l.nextName, l.nextID = x.NextFileName, x.NextFileID
+	return true
+}
+
+// FileInfo returns the FileInfo object made available by Next.
+//
+// FileInfo must only be called after a call to Next returned true.
+func (l *Listing) FileInfo() *FileInfo {
+	return l.objects[len(l.objects)-1]
+}
+
+// Err returns the error, if any, that was encountered while listing.
+func (l *Listing) Err() error {
+	return l.err
+}
+
+// ListFiles returns a Listing of files in the Bucket, alphabetically sorted,
+// starting from the file named fromName (included if it exists). To start from
+// the first file in the bucket, set fileName to "".
+//
+// ListFiles only returns the most recent version of each (non-hidden) file.
+// If you want to fetch all versions, use ListFilesVersions.
+func (b *Bucket) ListFiles(fromName string, pageCount int) *Listing {
+	return &Listing{
+		b:         b,
+		nextName:  &fromName,
+		pageCount: pageCount,
+	}
+}
+
+// ListFilesVersions is like ListFiles, but returns all file versions,
+// alphabetically sorted first, and by reverse of date/time uploaded then.
+//
+// If fromID is specified, the name-and-id pair is the starting point.
+func (b *Bucket) ListFilesVersions(fromName, fromID string, pageCount int) *Listing {
+	if fromName == "" && fromID != "" {
+		return &Listing{
+			err: errors.New("can't set fromID if fromName is not set"),
+		}
+	}
+	return &Listing{
+		b:         b,
+		versions:  true,
+		nextName:  &fromName,
+		nextID:    &fromID,
+		pageCount: pageCount,
+	}
 }

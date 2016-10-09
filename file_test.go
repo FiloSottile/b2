@@ -72,6 +72,12 @@ func TestFileListing(t *testing.T) {
 	file := make([]byte, 1234)
 	rand.Read(file)
 
+	for i := 0; i < 2; i++ {
+		if _, err := b.Upload(bytes.NewReader(file), "test-3", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	var fileIDs []string
 	for i := 0; i < 5; i++ {
 		fileID, err := b.Upload(bytes.NewReader(file), fmt.Sprintf("test-%d", i), "")
@@ -81,26 +87,44 @@ func TestFileListing(t *testing.T) {
 		fileIDs = append(fileIDs, fileID)
 	}
 
-	i := 1
-	fromName := "test-1"
-	for fromName := &fromName; fromName != nil; {
-		var res []*b2.FileInfo
-		var err error
-		res, fromName, err = b.ListFiles(*fromName, 3)
-		if err != nil {
-			t.Fatal(err)
+	i, l := 0, b.ListFiles("", 0)
+	for l.Next() {
+		fi := l.FileInfo()
+		if fi.ID != fileIDs[i] {
+			t.Errorf("wrong file ID number %d: expected %s, got %s", i, fileIDs[i], fi.ID)
 		}
-		if len(res) > 3 {
-			t.Errorf("too many returned values: %d", len(res))
-		}
-		for _, fi := range res {
-			if fi.ID != fileIDs[i] {
-				t.Errorf("wrong file ID number %d: expected %s, got %s", i, fileIDs[i], fi.ID)
-			}
-			i++
-		}
+		i++
+	}
+	if err := l.Err(); err != nil {
+		t.Fatal(err)
 	}
 	if i != len(fileIDs) {
 		t.Errorf("got %d files, expected %d", i-1, len(fileIDs)-1)
+	}
+
+	i, l = 1, b.ListFiles("test-1", 3)
+	for l.Next() {
+		fi := l.FileInfo()
+		if fi.ID != fileIDs[i] {
+			t.Errorf("wrong file ID number %d: expected %s, got %s", i, fileIDs[i], fi.ID)
+		}
+		i++
+	}
+	if err := l.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if i != len(fileIDs) {
+		t.Errorf("got %d files, expected %d", i-1, len(fileIDs)-1)
+	}
+
+	i, l = 0, b.ListFilesVersions("", "", 2)
+	for l.Next() {
+		i++
+	}
+	if err := l.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if i != len(fileIDs)+2 {
+		t.Errorf("got %d files, expected %d", i-1, len(fileIDs)-1+2)
 	}
 }
