@@ -54,6 +54,11 @@ func TestFileLifecycle(t *testing.T) {
 		t.Error("Wrong UploadTimestamp")
 	}
 
+	fi, err = b.GetFileInfoByName("test-foo")
+	if fi.ID != fileID {
+		t.Error("Mismatched file ID in GetByName")
+	}
+
 	if err := c.DeleteFile(fileID, "test-foo"); err != nil {
 		t.Fatal(err)
 	}

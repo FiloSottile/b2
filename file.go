@@ -80,6 +80,21 @@ func (c *Client) GetFileInfoByID(id string) (*FileInfo, error) {
 	return fi.makeFileInfo(), nil
 }
 
+// GetFileInfoByName obtains a FileInfo for a given name.
+//
+// If the file doesn't exist, (nil, nil) is returned.
+// If multiple versions of the file exist, only the latest is returned.
+func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
+	res, _, err := b.ListFiles(name, 1)
+	if err != nil || len(res) == 0 {
+		return nil, err
+	}
+	if res[0].Name == name {
+		return res[0], nil
+	}
+	return nil, nil // the file in res is the next existing one
+}
+
 // ListFiles returns at most maxCount files in the Bucket, alphabetically sorted,
 // starting from the file named fromName (included if it exists).
 //
@@ -89,7 +104,7 @@ func (c *Client) GetFileInfoByID(id string) (*FileInfo, error) {
 // 	for fromName := new(string); fromName != nil; {
 //		var res []*FileInfo
 //		var err error
-// 		res, fromName, err = b2.ListFiles(*fromName, 100)
+// 		res, fromName, err = b.ListFiles(*fromName, 100)
 //		if err != nil {
 //			log.Fatal(err)
 //		}
