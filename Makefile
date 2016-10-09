@@ -50,6 +50,10 @@ format: bin/goimports .GOPATH/.ok
 
 ##### =====> Internals <===== #####
 
+ifdef CI
+.DEFAULT_GOAL := test # Travis-CI runs just "make" by default
+endif
+
 VERSION          := $(shell git describe --tags --always --dirty="-dev")
 DATE             := $(shell date '+%Y-%m-%d-%H%M UTC')
 VERSION_FLAGS    := -ldflags='-X "main.Version=$(VERSION)" -X "main.BuildTime=$(DATE)"'
