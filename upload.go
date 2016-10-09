@@ -21,7 +21,10 @@ import (
 // Since the B2 API requires a SHA1 header, normally the file will first be read
 // entirely into a memory buffer. Two cases avoid the memory copy: if r is a
 // bytes.Buffer, the SHA1 will be computed in place; instead if r implements io.Seeker
-// the file will be read twice, once to compute the SHA1 and once to upload.
+// (like *os.File and *bytes.Reader), the file will be read twice, once to compute
+// the SHA1 and once to upload.
+//
+// If a file by this name already exist, a new version will be created.
 func (b *Bucket) Upload(r io.Reader, name, mimeType string) (string, error) {
 	var body io.Reader
 	var length int
@@ -66,7 +69,7 @@ func (b *Bucket) getUploadURL() (u *uploadURL, err error) {
 		return
 	}
 
-	res, err := b.c.doRequest("b2_get_upload_url", map[string]string{
+	res, err := b.c.doRequest("b2_get_upload_url", map[string]interface{}{
 		"bucketId": b.ID,
 	})
 	if err != nil {

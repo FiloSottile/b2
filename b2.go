@@ -101,7 +101,7 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 	return c, nil
 }
 
-func (c *Client) doRequest(endpoint string, params map[string]string) (*http.Response, error) {
+func (c *Client) doRequest(endpoint string, params map[string]interface{}) (*http.Response, error) {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return nil, err
@@ -182,7 +182,7 @@ func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo,
 
 // Buckets returns a list of buckets sorted by name.
 func (c *Client) Buckets() ([]*BucketInfo, error) {
-	res, err := c.doRequest("b2_list_buckets", map[string]string{
+	res, err := c.doRequest("b2_list_buckets", map[string]interface{}{
 		"accountId": c.AccountID,
 	})
 	if err != nil {
@@ -218,7 +218,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 	if allPublic {
 		bucketType = "allPublic"
 	}
-	res, err := c.doRequest("b2_create_bucket", map[string]string{
+	res, err := c.doRequest("b2_create_bucket", map[string]interface{}{
 		"accountId":  c.AccountID,
 		"bucketName": name,
 		"bucketType": bucketType,
@@ -245,7 +245,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 // Delete calls b2_delete_bucket. After this call succeeds the Bucket object
 // becomes invalid and any other calls will fail.
 func (b *Bucket) Delete() error {
-	res, err := b.c.doRequest("b2_delete_bucket", map[string]string{
+	res, err := b.c.doRequest("b2_delete_bucket", map[string]interface{}{
 		"accountId": b.c.AccountID,
 		"bucketId":  b.ID,
 	})
