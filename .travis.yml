@@ -1,2 +1,8 @@
 sudo: false
 language: go
+before_install:
+   - go get github.com/mattn/goveralls
+script:
+   - make cover
+after_script:
+   - goveralls -service travis-ci -coverprofile .GOPATH/cover/all.merged
