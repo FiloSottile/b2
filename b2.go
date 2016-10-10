@@ -15,6 +15,18 @@
 // Downloads from B2 are simple GETs, so if you want more control than the
 // standard functions you can build your own URL according to the API docs.
 // All the information you need is in the Client object.
+//
+// Hidden files and versions
+//
+// There is no first-class support for versions in this library, but most
+// behaviors are transparently exposed.  Upload can be used multiple times
+// with the same name, ListFiles will only return the latest version of
+// non-hidden files, and ListFilesVersions will return all files and versions.
+//
+// Unsupported APIs
+//
+// Large files (b2_*_large_file, b2_*_part), b2_get_download_authorization,
+// b2_hide_file, b2_update_bucket.
 package b2
 
 import (
