@@ -20,9 +20,11 @@ func (c *Client) DeleteFile(id, name string) error {
 
 // A FileInfo is the metadata associated with a specific file version.
 type FileInfo struct {
-	ID       string
-	Name     string
-	BucketID string
+	ID   string
+	Name string
+
+	// Had to remove BucketID since it is not returned by b2_download_file_by_*
+	// BucketID string
 
 	ContentSHA1   string
 	ContentLength int
@@ -53,7 +55,6 @@ func (fi *fileInfoObj) makeFileInfo() *FileInfo {
 	return &FileInfo{
 		ID:              fi.FileID,
 		Name:            fi.FileName,
-		BucketID:        fi.BucketID,
 		ContentLength:   fi.ContentLength,
 		ContentSHA1:     fi.ContentSHA1,
 		ContentType:     fi.ContentType,

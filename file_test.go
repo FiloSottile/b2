@@ -5,13 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/FiloSottile/b2"
 )
 
-func getBucket(t *testing.T, c *b2.Client) *b2.Bucket {
+func getBucket(t *testing.T, c *b2.Client) *b2.BucketInfo {
 	r := make([]byte, 6)
 	rand.Read(r)
 	name := "test-" + hex.EncodeToString(r)
@@ -21,7 +23,7 @@ func getBucket(t *testing.T, c *b2.Client) *b2.Bucket {
 		t.Fatal(err)
 	}
 
-	return &b.Bucket
+	return b
 }
 
 func TestFileLifecycle(t *testing.T) {
@@ -58,6 +60,44 @@ func TestFileLifecycle(t *testing.T) {
 	if fi.ID != fileID {
 		t.Error("Mismatched file ID in GetByName")
 	}
+
+	rc, fi2, err := c.DownloadFileByID(fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi2.UploadTimestamp != fi.UploadTimestamp {
+		t.Error("mismatch in c.DownloadFileByID -> fi.UploadTimestamp")
+	}
+	if fi2.ContentSHA1 != fi.ContentSHA1 {
+		t.Error("mismatch in c.DownloadFileByID -> fi.ContentSHA1")
+	}
+	if fi2.ContentLength != 123456 {
+		t.Error("mismatch in c.DownloadFileByID -> fi.ContentLength")
+	}
+	body, err := ioutil.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, file) {
+		t.Error("mismatch in file contents")
+	}
+	rc.Close()
+
+	rc, fi3, err := c.DownloadFileByName(b.Name, "test-foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fi2, fi3) {
+		t.Error("DownloadFileByID.FileInfo != DownloadFileByName.FileInfo")
+	}
+	body, err = ioutil.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, file) {
+		t.Error("mismatch in file contents")
+	}
+	rc.Close()
 
 	if err := c.DeleteFile(fileID, "test-foo"); err != nil {
 		t.Fatal(err)

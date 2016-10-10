@@ -9,6 +9,12 @@
 //
 // If you know the SHA1 and the length of the file in advance, you can use
 // (*Bucket).UploadWithSHA1.
+//
+// Downloading
+//
+// Downloads from B2 are simple GETs, so if you want more control than the
+// standard functions you can build your own URL according to the API docs.
+// All the information you need is in the Client object.
 package b2
 
 import (
@@ -119,15 +125,19 @@ func (c *Client) doRequest(endpoint string, params map[string]interface{}) (*htt
 	}
 
 	if res.StatusCode != 200 {
-		defer drainAndClose(res.Body)
-		b2Err := &Error{}
-		if err := json.NewDecoder(res.Body).Decode(b2Err); err != nil {
-			return nil, fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
-		}
-		return nil, b2Err
+		return nil, parseB2Error(res)
 	}
 
 	return res, nil
+}
+
+func parseB2Error(res *http.Response) error {
+	defer drainAndClose(res.Body)
+	b2Err := &Error{}
+	if err := json.NewDecoder(res.Body).Decode(b2Err); err != nil {
+		return fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
+	}
+	return b2Err
 }
 
 // drainAndClose will make an attempt at flushing and closing the body so that the
