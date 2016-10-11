@@ -126,10 +126,10 @@ func (l *Listing) Next() bool {
 	if l.err != nil {
 		return false
 	}
-	if len(l.objects) != 0 {
+	if len(l.objects) > 0 {
 		l.objects = l.objects[:len(l.objects)-1]
 	}
-	if len(l.objects) != 0 {
+	if len(l.objects) > 0 {
 		return true
 	}
 	if l.nextName == nil {
@@ -169,7 +169,7 @@ func (l *Listing) Next() bool {
 		l.objects[len(l.objects)-1-i] = f.makeFileInfo()
 	}
 	l.nextName, l.nextID = x.NextFileName, x.NextFileID
-	return true
+	return len(l.objects) > 0
 }
 
 // FileInfo returns the FileInfo object made available by Next.
