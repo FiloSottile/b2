@@ -3,6 +3,7 @@ package b2_test
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -33,17 +34,16 @@ func TestFileLifecycle(t *testing.T) {
 
 	file := make([]byte, 123456)
 	rand.Read(file)
-	fileID, err := b.Upload(bytes.NewReader(file), "test-foo", "")
+	fiu, err := b.Upload(bytes.NewReader(file), "test-foo", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(fileID)
 
-	fi, err := c.GetFileInfoByID(fileID)
+	fi, err := c.GetFileInfoByID(fiu.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.ID != fileID {
+	if fi.ID != fiu.ID {
 		t.Error("Mismatched file ID")
 	}
 	if fi.ContentLength != 123456 {
@@ -55,13 +55,20 @@ func TestFileLifecycle(t *testing.T) {
 	if fi.UploadTimestamp.After(time.Now()) || fi.UploadTimestamp.Before(time.Now().Add(-time.Hour)) {
 		t.Error("Wrong UploadTimestamp")
 	}
+	if fi.ContentSHA1 != fiu.ContentSHA1 {
+		t.Error("Mismatched SHA1")
+	}
+	digest := sha1.Sum(file)
+	if fi.ContentSHA1 != hex.EncodeToString(digest[:]) {
+		t.Error("Wrong SHA1")
+	}
 
 	fi, err = b.GetFileInfoByName("test-foo")
-	if fi.ID != fileID {
+	if fi.ID != fiu.ID {
 		t.Error("Mismatched file ID in GetByName")
 	}
 
-	rc, fi2, err := c.DownloadFileByID(fileID)
+	rc, fi2, err := c.DownloadFileByID(fiu.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +106,7 @@ func TestFileLifecycle(t *testing.T) {
 	}
 	rc.Close()
 
-	if err := c.DeleteFile(fileID, "test-foo"); err != nil {
+	if err := c.DeleteFile(fiu.ID, "test-foo"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -120,11 +127,11 @@ func TestFileListing(t *testing.T) {
 
 	var fileIDs []string
 	for i := 0; i < 5; i++ {
-		fileID, err := b.Upload(bytes.NewReader(file), fmt.Sprintf("test-%d", i), "")
+		fi, err := b.Upload(bytes.NewReader(file), fmt.Sprintf("test-%d", i), "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		fileIDs = append(fileIDs, fileID)
+		fileIDs = append(fileIDs, fi.ID)
 	}
 
 	i, l := 0, b.ListFiles("", 0)

@@ -26,7 +26,7 @@ type FileInfo struct {
 	// Had to remove BucketID since it is not returned by b2_download_file_by_*
 	// BucketID string
 
-	ContentSHA1   string
+	ContentSHA1   string // hex encoded
 	ContentLength int
 	ContentType   string
 
@@ -34,7 +34,7 @@ type FileInfo struct {
 	UploadTimestamp time.Time
 
 	// If Action is "hide", this ID does not refer to a file version
-	// but to an hiding action.
+	// but to an hiding action. Otherwise "upload".
 	Action string
 }
 

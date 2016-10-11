@@ -12,7 +12,6 @@ import (
 )
 
 // Upload uploads a file to a B2 bucket. If mimeType is "", "b2/x-auto" will be used.
-// It returns the file ID to be used to stat/delete/download it.
 //
 // Concurrent calls to Upload will use separate upload URLs, but consequent ones
 // will attempt to reuse previously obtained ones to save b2_get_upload_url calls.
@@ -20,12 +19,12 @@ import (
 //
 // Since the B2 API requires a SHA1 header, normally the file will first be read
 // entirely into a memory buffer. Two cases avoid the memory copy: if r is a
-// bytes.Buffer, the SHA1 will be computed in place; instead if r implements io.Seeker
+// bytes.Buffer, the SHA1 will be computed in place; otherwise, if r implements io.Seeker
 // (like *os.File and *bytes.Reader), the file will be read twice, once to compute
 // the SHA1 and once to upload.
 //
 // If a file by this name already exist, a new version will be created.
-func (b *Bucket) Upload(r io.Reader, name, mimeType string) (string, error) {
+func (b *Bucket) Upload(r io.Reader, name, mimeType string) (*FileInfo, error) {
 	var body io.Reader
 	var length int
 	h := sha1.New()
@@ -37,16 +36,16 @@ func (b *Bucket) Upload(r io.Reader, name, mimeType string) (string, error) {
 	case io.ReadSeeker:
 		n, err := io.Copy(h, r)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := r.Seek(0, io.SeekStart); err != nil {
-			return "", err
+			return nil, err
 		}
 		body, length = r, int(n)
 	default:
 		buf := &bytes.Buffer{}
 		if _, err := buf.ReadFrom(io.TeeReader(r, h)); err != nil {
-			return "", err
+			return nil, err
 		}
 		body, length = buf, buf.Len()
 	}
@@ -93,18 +92,18 @@ func (b *Bucket) putUploadURL(u *uploadURL) {
 //
 // This is an advanced interface, common clients should use Upload, and consider
 // passing it a bytes.Buffer or io.ReadSeeker to avoid buffering.
-func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1sum string, length int) (string, error) {
+func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1sum string, length int) (*FileInfo, error) {
 	var res *http.Response
 	failedTries := 0
 	for {
 		uurl, err := b.getUploadURL()
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		req, err := http.NewRequest("POST", uurl.UploadURL, r)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		req.Header.Set("Authorization", uurl.AuthorizationToken)
 		req.Header.Set("X-Bz-File-Name", url.QueryEscape(name))
@@ -120,15 +119,13 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1sum string, len
 			// Upload URLs are allowed to fail a few times.
 			failedTries++
 		} else {
-			return "", err
+			return nil, err
 		}
 	}
 	defer drainAndClose(res.Body)
-	var fileRes struct {
-		FileID string
+	fi := fileInfoObj{}
+	if err := json.NewDecoder(res.Body).Decode(&fi); err != nil {
+		return nil, err
 	}
-	if err := json.NewDecoder(res.Body).Decode(&fileRes); err != nil {
-		return "", err
-	}
-	return fileRes.FileID, nil
+	return fi.makeFileInfo(), nil
 }
