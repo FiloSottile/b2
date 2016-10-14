@@ -141,7 +141,7 @@ func TestFileListing(t *testing.T) {
 		fileIDs = append(fileIDs, fi.ID)
 	}
 
-	i, l := 0, b.ListFiles("", 0)
+	i, l := 0, b.ListFiles("")
 	for l.Next() {
 		fi := l.FileInfo()
 		if fi.ID != fileIDs[i] {
@@ -156,7 +156,8 @@ func TestFileListing(t *testing.T) {
 		t.Errorf("got %d files, expected %d", i-1, len(fileIDs)-1)
 	}
 
-	i, l = 1, b.ListFiles("test-1", 3)
+	i, l = 1, b.ListFiles("test-1")
+	l.SetPageCount(3)
 	for l.Next() {
 		fi := l.FileInfo()
 		if fi.ID != fileIDs[i] {
@@ -171,7 +172,8 @@ func TestFileListing(t *testing.T) {
 		t.Errorf("got %d files, expected %d", i-1, len(fileIDs)-1)
 	}
 
-	i, l = 0, b.ListFilesVersions("", "", 2)
+	i, l = 0, b.ListFilesVersions("", "")
+	l.SetPageCount(2)
 	for l.Next() {
 		i++
 	}

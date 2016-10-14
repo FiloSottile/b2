@@ -89,7 +89,8 @@ var FileNotFoundError = errors.New("no file with the given name in the bucket")
 // If the file doesn't exist, FileNotFoundError is returned.
 // If multiple versions of the file exist, only the latest is returned.
 func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
-	l := b.ListFiles(name, 1)
+	l := b.ListFiles(name)
+	l.SetPageCount(1)
 	if l.Next() {
 		if l.FileInfo().Name == name {
 			return l.FileInfo(), nil
@@ -103,7 +104,7 @@ func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
 
 // A Listing is the result of (*Bucket).ListFiles[Versions].
 // It works like sql.Rows: use Next to advance and then FileInfo.
-// Check Err once Next returns false. It handles pagination transparently.
+// Check Err once Next returns false.
 //
 //     l := b.ListFiles("", 50)
 //     for l.Next() {
@@ -114,18 +115,34 @@ func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
 //         ...
 //     }
 //
+// A Listing handles pagination transparently, so it iterates until
+// the last file in the bucket. To limit the number of results, do this.
+//
+//     for i := 0; i < limit && l.Next(); i++ {
+//
 type Listing struct {
 	b                *Bucket
 	versions         bool
-	pageCount        int
+	nextPageCount    int
 	nextName, nextID *string
 	objects          []*FileInfo // in reverse order
 	err              error
 }
 
-// Next calls the list API and prepares the FileInfo results.
+// SetPageCount controls the number of results to be fetched with each API
+// call. The maximum n is 1000, higher values are automatically limited to 1000.
+//
+// SetPageCount does not limit the number of results returned by a Listing.
+func (l *Listing) SetPageCount(n int) {
+	if n > 1000 {
+		n = 1000
+	}
+	l.nextPageCount = n
+}
+
+// Next calls the list API if needed and prepares the FileInfo results.
 // It returns true on success, or false if there is no next result
-// row or an error happened while preparing it. Err should be
+// or an error happened while preparing it. Err should be
 // consulted to distinguish between the two cases.
 func (l *Listing) Next() bool {
 	if l.err != nil {
@@ -144,7 +161,7 @@ func (l *Listing) Next() bool {
 	data := map[string]interface{}{
 		"bucketId":      l.b.ID,
 		"startFileName": *l.nextName,
-		"maxFileCount":  l.pageCount,
+		"maxFileCount":  l.nextPageCount,
 	}
 	endpoint := "b2_list_file_names"
 	if l.versions {
@@ -195,11 +212,10 @@ func (l *Listing) Err() error {
 //
 // ListFiles only returns the most recent version of each (non-hidden) file.
 // If you want to fetch all versions, use ListFilesVersions.
-func (b *Bucket) ListFiles(fromName string, pageCount int) *Listing {
+func (b *Bucket) ListFiles(fromName string) *Listing {
 	return &Listing{
-		b:         b,
-		nextName:  &fromName,
-		pageCount: pageCount,
+		b:        b,
+		nextName: &fromName,
 	}
 }
 
@@ -207,17 +223,16 @@ func (b *Bucket) ListFiles(fromName string, pageCount int) *Listing {
 // alphabetically sorted first, and by reverse of date/time uploaded then.
 //
 // If fromID is specified, the name-and-id pair is the starting point.
-func (b *Bucket) ListFilesVersions(fromName, fromID string, pageCount int) *Listing {
+func (b *Bucket) ListFilesVersions(fromName, fromID string) *Listing {
 	if fromName == "" && fromID != "" {
 		return &Listing{
 			err: errors.New("can't set fromID if fromName is not set"),
 		}
 	}
 	return &Listing{
-		b:         b,
-		versions:  true,
-		nextName:  &fromName,
-		nextID:    &fromID,
-		pageCount: pageCount,
+		b:        b,
+		versions: true,
+		nextName: &fromName,
+		nextID:   &fromID,
 	}
 }
