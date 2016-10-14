@@ -64,8 +64,15 @@ func TestFileLifecycle(t *testing.T) {
 	}
 
 	fi, err = b.GetFileInfoByName("test-foo")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if fi.ID != fiu.ID {
 		t.Error("Mismatched file ID in GetByName")
+	}
+	_, err = b.GetFileInfoByName("not-exists")
+	if err != b2.FileNotFoundError {
+		t.Errorf("b.GetFileInfoByName did not return FileNotFoundError: %v", err)
 	}
 
 	rc, fi2, err := c.DownloadFileByID(fiu.ID)

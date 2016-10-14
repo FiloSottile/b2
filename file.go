@@ -82,9 +82,11 @@ func (c *Client) GetFileInfoByID(id string) (*FileInfo, error) {
 	return fi.makeFileInfo(), nil
 }
 
+var FileNotFoundError = errors.New("no file with the given name in the bucket")
+
 // GetFileInfoByName obtains a FileInfo for a given name.
 //
-// If the file doesn't exist, (nil, nil) is returned.
+// If the file doesn't exist, FileNotFoundError is returned.
 // If multiple versions of the file exist, only the latest is returned.
 func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
 	l := b.ListFiles(name, 1)
@@ -93,7 +95,10 @@ func (b *Bucket) GetFileInfoByName(name string) (*FileInfo, error) {
 			return l.FileInfo(), nil
 		}
 	}
-	return nil, l.Err()
+	if err := l.Err(); err != nil {
+		return nil, l.Err()
+	}
+	return nil, FileNotFoundError
 }
 
 // A Listing is the result of (*Bucket).ListFiles[Versions].
