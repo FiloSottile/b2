@@ -112,6 +112,9 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1sum string, len
 		req.Header.Set("X-Bz-Content-Sha1", sha1sum)
 
 		res, err = b.c.hc.Do(req)
+		if err == nil && res.StatusCode != 200 {
+			err = parseB2Error(res)
+		}
 		if err == nil {
 			defer b.putUploadURL(uurl)
 			break
