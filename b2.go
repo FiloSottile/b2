@@ -8,7 +8,8 @@
 // bytes.Buffer or a io.ReadSeeker.
 //
 // If you know the SHA1 and the length of the file in advance, you can use
-// (*Bucket).UploadWithSHA1.
+// (*Bucket).UploadWithSHA1 but you are responsible for retrying on
+// transient errors.
 //
 // Downloading
 //
