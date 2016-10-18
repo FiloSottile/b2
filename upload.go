@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strconv"
 )
 
 // Upload uploads a file to a B2 bucket. If mimeType is "", "b2/x-auto" will be used.
@@ -54,7 +53,7 @@ func (b *Bucket) Upload(r io.Reader, name, mimeType string) (*FileInfo, error) {
 			return nil, err
 		}
 
-		fi, err = b.UploadWithSHA1(body, name, mimeType, sha1Sum, int(length))
+		fi, err = b.UploadWithSHA1(body, name, mimeType, sha1Sum, length)
 		if err == nil {
 			break
 		}
@@ -105,7 +104,7 @@ func (b *Bucket) putUploadURL(u *uploadURL) {
 //
 // This is an advanced interface, most clients should use Upload, and consider
 // passing it a bytes.Buffer or io.ReadSeeker to avoid buffering.
-func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1Sum string, length int) (*FileInfo, error) {
+func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1Sum string, length int64) (*FileInfo, error) {
 	uurl, err := b.getUploadURL()
 	if err != nil {
 		return nil, err
@@ -115,10 +114,10 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1Sum string, len
 	if err != nil {
 		return nil, err
 	}
+	req.ContentLength = length
 	req.Header.Set("Authorization", uurl.AuthorizationToken)
 	req.Header.Set("X-Bz-File-Name", url.QueryEscape(name))
 	req.Header.Set("Content-Type", mimeType)
-	req.Header.Set("Content-Length", strconv.Itoa(length))
 	req.Header.Set("X-Bz-Content-Sha1", sha1Sum)
 
 	res, err := b.c.hc.Do(req)

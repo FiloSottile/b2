@@ -2,7 +2,9 @@ package b2_test
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
+	"net/http"
 	"os"
 	"sync"
 	"testing"
@@ -24,7 +26,14 @@ func getClient(t *testing.T) *b2.Client {
 	if client != nil {
 		return client
 	}
-	c, err := b2.NewClient(accountID, applicationKey, nil)
+	c, err := b2.NewClient(accountID, applicationKey, &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	})
 	if err != nil {
 		t.Fatal("While authenticating:", err)
 	}
