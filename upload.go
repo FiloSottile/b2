@@ -111,7 +111,7 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1Sum string, len
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", uurl.UploadURL, r)
+	req, err := http.NewRequest("POST", uurl.UploadURL, ioutil.NopCloser(r))
 	if err != nil {
 		return nil, err
 	}
