@@ -28,6 +28,12 @@
 //
 // Large files (b2_*_large_file, b2_*_part), b2_get_download_authorization,
 // b2_hide_file, b2_update_bucket.
+//
+// Debug mode
+//
+// If the B2_DEBUG environment variable is set to 1, all API calls will be
+// logged. On Go 1.7 and later, it will also log when new (non-reused)
+// connections are established.
 package b2
 
 import (
@@ -38,7 +44,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os"
 	"sync"
 )
 
@@ -94,6 +102,7 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 		return nil, err
 	}
 	defer drainAndClose(res.Body)
+	debugf("login: %d", res.StatusCode)
 
 	if res.StatusCode != 200 {
 		b2Err := &Error{}
@@ -104,6 +113,7 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 	}
 
 	c := &Client{hc: httpClient}
+	c.hc.Transport = &transport{t: c.hc.Transport, c: c}
 	if err := json.NewDecoder(res.Body).Decode(c); err != nil {
 		return nil, fmt.Errorf("failed to decode b2_authorize_account answer: %s", err)
 	}
@@ -120,28 +130,61 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 	return c, nil
 }
 
+// transport is a wrapper providing authentication, tracing and error handling.
+type transport struct {
+	t http.RoundTripper
+	c *Client
+}
+
+// requestExtFunc is implemented in the go1.7 file, to add httptrace
+var requestExtFunc func(*http.Request) *http.Request
+
+func (t *transport) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	if req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", t.c.AuthorizationToken)
+	}
+
+	if requestExtFunc != nil {
+		req = requestExtFunc(req)
+	}
+
+	if t.t == nil {
+		res, err = http.DefaultTransport.RoundTrip(req)
+	} else {
+		res, err = t.t.RoundTrip(req)
+	}
+
+	if err == nil && res.StatusCode != 200 {
+		return nil, parseB2Error(res)
+	}
+
+	return res, err
+}
+
+var debug = os.Getenv("B2_DEBUG") == "1"
+
+func debugf(format string, a ...interface{}) {
+	if debug {
+		log.Printf("[b2] "+format, a...)
+	}
+}
+
 func (c *Client) doRequest(endpoint string, params map[string]interface{}) (*http.Response, error) {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return nil, err
 	}
+	// Reduce debug log noise
+	delete(params, "accountID")
+	delete(params, "bucketID")
 
-	r, err := http.NewRequest("POST", c.ApiURL+apiPath+endpoint, bytes.NewBuffer(body))
+	res, err := c.hc.Post(c.ApiURL+apiPath+endpoint, "application/json", bytes.NewBuffer(body))
 	if err != nil {
-		return nil, err
+		debugf("%s (%v): %v", endpoint, params, err)
+	} else {
+		debugf("%s (%v)", endpoint, params)
 	}
-	r.Header.Set("Authorization", c.AuthorizationToken)
-
-	res, err := c.hc.Do(r)
-	if err != nil {
-		return nil, err
-	}
-
-	if res.StatusCode != 200 {
-		return nil, parseB2Error(res)
-	}
-
-	return res, nil
+	return res, err
 }
 
 func parseB2Error(res *http.Response) error {

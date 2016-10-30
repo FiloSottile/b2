@@ -33,6 +33,7 @@ func (b *Bucket) Upload(r io.Reader, name, mimeType string) (*FileInfo, error) {
 	case io.ReadSeeker:
 		body = r
 	default:
+		debugf("upload %s: buffering", name)
 		b, err := ioutil.ReadAll(r)
 		if err != nil {
 			return nil, err
@@ -122,11 +123,10 @@ func (b *Bucket) UploadWithSHA1(r io.Reader, name, mimeType, sha1Sum string, len
 
 	res, err := b.c.hc.Do(req)
 	if err != nil {
+		debugf("upload %s: %s", name, err)
 		return nil, err
 	}
-	if res.StatusCode != 200 {
-		return nil, parseB2Error(res)
-	}
+	debugf("upload %s (%d %s)", name, length, sha1Sum)
 	defer drainAndClose(res.Body)
 
 	fi := fileInfoObj{}

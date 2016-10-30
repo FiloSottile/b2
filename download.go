@@ -14,20 +14,12 @@ import (
 // Note: the (*FileInfo).CustomMetadata values returned by this function are
 // all represented as strings, because they are delivered by HTTP headers.
 func (c *Client) DownloadFileByID(id string) (io.ReadCloser, *FileInfo, error) {
-	url := c.DownloadURL + apiPath + "b2_download_file_by_id?fileId=" + id
-	r, err := http.NewRequest("GET", url, nil)
+	res, err := c.hc.Get(c.DownloadURL + apiPath + "b2_download_file_by_id?fileId=" + id)
 	if err != nil {
+		debugf("download %s: %s", id, err)
 		return nil, nil, err
 	}
-	r.Header.Set("Authorization", c.AuthorizationToken)
-
-	res, err := c.hc.Do(r)
-	if err != nil {
-		return nil, nil, err
-	}
-	if res.StatusCode != 200 {
-		return nil, nil, parseB2Error(res)
-	}
+	debugf("download %s (%s)", id, res.Header.Get("X-Bz-Content-Sha1"))
 
 	fi, err := parseFileInfoHeaders(res.Header)
 	return res.Body, fi, err
@@ -39,20 +31,12 @@ func (c *Client) DownloadFileByID(id string) (io.ReadCloser, *FileInfo, error) {
 // Note: the (*FileInfo).CustomMetadata values returned by this function are
 // all represented as strings, because they are delivered by HTTP headers.
 func (c *Client) DownloadFileByName(bucket, file string) (io.ReadCloser, *FileInfo, error) {
-	url := c.DownloadURL + "/file/" + bucket + "/" + file
-	r, err := http.NewRequest("GET", url, nil)
+	res, err := c.hc.Get(c.DownloadURL + "/file/" + bucket + "/" + file)
 	if err != nil {
+		debugf("download %s: %s", file, err)
 		return nil, nil, err
 	}
-	r.Header.Set("Authorization", c.AuthorizationToken)
-
-	res, err := c.hc.Do(r)
-	if err != nil {
-		return nil, nil, err
-	}
-	if res.StatusCode != 200 {
-		return nil, nil, parseB2Error(res)
-	}
+	debugf("download %s (%s)", file, res.Header.Get("X-Bz-Content-Sha1"))
 
 	fi, err := parseFileInfoHeaders(res.Header)
 	return res.Body, fi, err
