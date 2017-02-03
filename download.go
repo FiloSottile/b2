@@ -14,7 +14,13 @@ import (
 // Note: the (*FileInfo).CustomMetadata values returned by this function are
 // all represented as strings, because they are delivered by HTTP headers.
 func (c *Client) DownloadFileByID(id string) (io.ReadCloser, *FileInfo, error) {
-	res, err := c.hc.Get(c.DownloadURL + apiPath + "b2_download_file_by_id?fileId=" + id)
+	downloadURL := c.loginInfo.Load().(*LoginInfo).DownloadURL
+	res, err := c.hc.Get(downloadURL + apiPath + "b2_download_file_by_id?fileId=" + id)
+	if e, ok := UnwrapError(err); ok && e.Status == http.StatusUnauthorized {
+		if err = c.login(res); err == nil {
+			res, err = c.hc.Get(downloadURL + apiPath + "b2_download_file_by_id?fileId=" + id)
+		}
+	}
 	if err != nil {
 		debugf("download %s: %s", id, err)
 		return nil, nil, err
@@ -31,7 +37,13 @@ func (c *Client) DownloadFileByID(id string) (io.ReadCloser, *FileInfo, error) {
 // Note: the (*FileInfo).CustomMetadata values returned by this function are
 // all represented as strings, because they are delivered by HTTP headers.
 func (c *Client) DownloadFileByName(bucket, file string) (io.ReadCloser, *FileInfo, error) {
-	res, err := c.hc.Get(c.DownloadURL + "/file/" + bucket + "/" + file)
+	downloadURL := c.loginInfo.Load().(*LoginInfo).DownloadURL
+	res, err := c.hc.Get(downloadURL + "/file/" + bucket + "/" + file)
+	if e, ok := UnwrapError(err); ok && e.Status == http.StatusUnauthorized {
+		if err = c.login(res); err == nil {
+			res, err = c.hc.Get(downloadURL + "/file/" + bucket + "/" + file)
+		}
+	}
 	if err != nil {
 		debugf("download %s: %s", file, err)
 		return nil, nil, err

@@ -15,7 +15,7 @@
 //
 // Downloads from B2 are simple GETs, so if you want more control than the
 // standard functions you can build your own URL according to the API docs.
-// All the information you need is in the Client object.
+// All the information you need is returned by Client.LoginInfo().
 //
 // Hidden files and versions
 //
@@ -49,6 +49,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 // Error is the decoded B2 JSON error return value. It's not the only type of
@@ -82,9 +83,9 @@ const (
 	apiPath       = "/b2api/v1/"
 )
 
-// A Client is an authenticated API client. It is safe for concurrent use and should
-// be reused to take advantage of connection and URL reuse.
-type Client struct {
+// LoginInfo holds the information obtained upon login, which are sufficient
+// to interact with the API directly.
+type LoginInfo struct {
 	AccountID string
 	ApiURL    string
 
@@ -94,6 +95,32 @@ type Client struct {
 	// AuthorizationToken is the value to pass in the Authorization
 	// header of all private calls. This is valid for at most 24 hours.
 	AuthorizationToken string
+}
+
+// LoginInfo returns the LoginInfo object currently in use. If refresh is
+// true, it obtains a new one before returning.
+//
+// Note that once you obtain this there is no guarantee on its freshness,
+// and it will eventually expire.
+func (c *Client) LoginInfo(refresh bool) (*LoginInfo, error) {
+	if refresh {
+		if err := c.login(nil); err != nil {
+			return nil, err
+		}
+	}
+	return c.loginInfo.Load().(*LoginInfo), nil
+}
+
+// A Client is an authenticated API client. It is safe for concurrent use and should
+// be reused to take advantage of connection and URL reuse.
+//
+// The Client handles refreshing authorization tokens transparently.
+type Client struct {
+	accountID, applicationKey string
+
+	loginInfo atomic.Value // *LoginInfo
+	// loginMu is held to avoid multiple logins in flight at the same time
+	loginMu sync.Mutex
 
 	hc *http.Client
 }
@@ -105,16 +132,44 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 		httpClient = http.DefaultClient
 	}
 
-	r, err := http.NewRequest("GET", defaultAPIURL+apiPath+"b2_authorize_account", nil)
-	if err != nil {
+	c := &Client{
+		accountID:      accountID,
+		applicationKey: applicationKey,
+		hc:             httpClient,
+	}
+
+	if err := c.login(nil); err != nil {
 		return nil, err
 	}
-	r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(
-		[]byte(accountID+":"+applicationKey)))
 
-	res, err := httpClient.Do(r)
+	c.hc.Transport = &transport{t: c.hc.Transport, c: c}
+	return c, nil
+}
+
+func (c *Client) login(failedRes *http.Response) error {
+	c.loginMu.Lock()
+	defer c.loginMu.Unlock()
+
+	// check under the lock that another login didn't beat us
+	if failedRes != nil && c.loginInfo.Load() != nil {
+		current := c.loginInfo.Load().(*LoginInfo).AuthorizationToken
+		failed := failedRes.Request.Header.Get("Authorization")
+		if current != failed {
+			debugf("another login call succeeded concurrently")
+			return nil
+		}
+	}
+
+	r, err := http.NewRequest("GET", defaultAPIURL+apiPath+"b2_authorize_account", nil)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(
+		[]byte(c.accountID+":"+c.applicationKey)))
+
+	res, err := c.hc.Do(r)
+	if err != nil {
+		return err
 	}
 	defer drainAndClose(res.Body)
 	debugf("login: %d", res.StatusCode)
@@ -122,27 +177,18 @@ func NewClient(accountID, applicationKey string, httpClient *http.Client) (*Clie
 	if res.StatusCode != 200 {
 		b2Err := &Error{}
 		if err := json.NewDecoder(res.Body).Decode(b2Err); err != nil {
-			return nil, fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
+			return fmt.Errorf("unknown error during b2_authorize_account: %d", res.StatusCode)
 		}
-		return nil, b2Err
+		return b2Err
 	}
 
-	c := &Client{hc: httpClient}
-	c.hc.Transport = &transport{t: c.hc.Transport, c: c}
-	if err := json.NewDecoder(res.Body).Decode(c); err != nil {
-		return nil, fmt.Errorf("failed to decode b2_authorize_account answer: %s", err)
+	li := &LoginInfo{}
+	if err := json.NewDecoder(res.Body).Decode(li); err != nil {
+		return fmt.Errorf("failed to decode b2_authorize_account answer: %s", err)
 	}
-	switch {
-	case c.AccountID == "":
-		return nil, errors.New("b2_authorize_account answer missing accountId")
-	case c.AuthorizationToken == "":
-		return nil, errors.New("b2_authorize_account answer missing authorizationToken")
-	case c.ApiURL == "":
-		return nil, errors.New("b2_authorize_account answer missing apiUrl")
-	case c.DownloadURL == "":
-		return nil, errors.New("b2_authorize_account answer missing downloadUrl")
-	}
-	return c, nil
+	c.loginInfo.Store(li)
+
+	return nil
 }
 
 // transport is a wrapper providing authentication, tracing and error handling.
@@ -156,7 +202,7 @@ var requestExtFunc func(*http.Request) *http.Request
 
 func (t *transport) RoundTrip(req *http.Request) (res *http.Response, err error) {
 	if req.Header.Get("Authorization") == "" {
-		req.Header.Set("Authorization", t.c.AuthorizationToken)
+		req.Header.Set("Authorization", t.c.loginInfo.Load().(*LoginInfo).AuthorizationToken)
 	}
 
 	if requestExtFunc != nil {
@@ -193,7 +239,13 @@ func (c *Client) doRequest(endpoint string, params map[string]interface{}) (*htt
 	delete(params, "accountID")
 	delete(params, "bucketID")
 
-	res, err := c.hc.Post(c.ApiURL+apiPath+endpoint, "application/json", bytes.NewBuffer(body))
+	apiURL := c.loginInfo.Load().(*LoginInfo).ApiURL
+	res, err := c.hc.Post(apiURL+apiPath+endpoint, "application/json", bytes.NewBuffer(body))
+	if e, ok := UnwrapError(err); ok && e.Status == http.StatusUnauthorized {
+		if err = c.login(res); err == nil {
+			res, err = c.hc.Post(apiURL+apiPath+endpoint, "application/json", bytes.NewBuffer(body))
+		}
+	}
 	if err != nil {
 		debugf("%s (%v): %v", endpoint, params, err)
 	} else {
@@ -264,7 +316,7 @@ func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo,
 // Buckets returns a list of buckets sorted by name.
 func (c *Client) Buckets() ([]*BucketInfo, error) {
 	res, err := c.doRequest("b2_list_buckets", map[string]interface{}{
-		"accountId": c.AccountID,
+		"accountId": c.accountID,
 	})
 	if err != nil {
 		return nil, err
@@ -300,7 +352,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 		bucketType = "allPublic"
 	}
 	res, err := c.doRequest("b2_create_bucket", map[string]interface{}{
-		"accountId":  c.AccountID,
+		"accountId":  c.accountID,
 		"bucketName": name,
 		"bucketType": bucketType,
 	})
@@ -327,7 +379,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 // becomes invalid and any other calls will fail.
 func (b *Bucket) Delete() error {
 	res, err := b.c.doRequest("b2_delete_bucket", map[string]interface{}{
-		"accountId": b.c.AccountID,
+		"accountId": b.c.accountID,
 		"bucketId":  b.ID,
 	})
 	if err != nil {
