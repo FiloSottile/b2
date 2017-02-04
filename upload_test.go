@@ -12,7 +12,7 @@ import (
 func TestUploadError(t *testing.T) {
 	c := getClient(t)
 	b := getBucket(t, c)
-	defer b.Delete()
+	defer deleteBucket(t, b)
 
 	file := make([]byte, 123456)
 	rand.Read(file)
@@ -26,7 +26,7 @@ func TestUploadError(t *testing.T) {
 func TestUploadFile(t *testing.T) {
 	c := getClient(t)
 	b := getBucket(t, c)
-	defer b.Delete()
+	defer deleteBucket(t, b)
 
 	tmpfile, err := ioutil.TempFile("", "b2")
 	if err != nil {
@@ -65,7 +65,7 @@ func TestUploadFile(t *testing.T) {
 func TestUploadBuffer(t *testing.T) {
 	c := getClient(t)
 	b := getBucket(t, c)
-	defer b.Delete()
+	defer deleteBucket(t, b)
 
 	content := make([]byte, 123456)
 	rand.Read(content)
@@ -86,7 +86,7 @@ func TestUploadBuffer(t *testing.T) {
 func TestUploadReader(t *testing.T) {
 	c := getClient(t)
 	b := getBucket(t, c)
-	defer b.Delete()
+	defer deleteBucket(t, b)
 
 	content := make([]byte, 123456)
 	rand.Read(content)

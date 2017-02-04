@@ -5,8 +5,11 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"flag"
+	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -40,6 +43,41 @@ func getClient(t *testing.T) *b2.Client {
 	}
 	client = c
 	return c
+}
+
+var cleanup = flag.Bool("cleanup", false, "Delete all test-* buckets on start.")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+
+	if *cleanup {
+		c := getClient(nil)
+		buckets, err := c.Buckets()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, b := range buckets {
+			if !strings.HasPrefix(b.Name, "test-") {
+				continue
+			}
+			log.Println("Deleting bucket", b.Name)
+			l := b.ListFilesVersions("", "")
+			for l.Next() {
+				fi := l.FileInfo()
+				if err := c.DeleteFile(fi.ID, fi.Name); err != nil {
+					log.Fatal(err)
+				}
+			}
+			if err := l.Err(); err != nil {
+				log.Fatal(err)
+			}
+			if err := b.Delete(); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
+	os.Exit(m.Run())
 }
 
 func TestBucketLifecycle(t *testing.T) {
