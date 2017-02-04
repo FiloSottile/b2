@@ -46,12 +46,14 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 )
 
 // Error is the decoded B2 JSON error return value. It's not the only type of
-// error returned by this package, you can check for it with a type assertion.
+// error returned by this package, and it is mostly returned wrapped in a
+// url.Error. Use UnwrapError to access it.
 type Error struct {
 	Code    string
 	Message string
@@ -60,6 +62,19 @@ type Error struct {
 
 func (e *Error) Error() string {
 	return fmt.Sprintf("b2 remote error [%s]: %s", e.Code, e.Message)
+}
+
+// UnwrapError attempts to extract the Error that caused err. If there is no
+// Error object to unwrap, ok is false and err is nil. That does not mean that
+// the original error should be ignored.
+func UnwrapError(err error) (b2Err *Error, ok bool) {
+	if e, ok := err.(*url.Error); ok {
+		err = e.Err
+	}
+	if e, ok := err.(*Error); ok {
+		return e, true
+	}
+	return nil, false
 }
 
 const (
