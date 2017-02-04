@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"os"
 	"sync"
@@ -81,5 +82,22 @@ func TestBucketLifecycle(t *testing.T) {
 
 	if _, err := c.BucketByName(name, false); err == nil {
 		t.Fatal("Bucket did not disappear")
+	}
+}
+
+func TestUnwrapError(t *testing.T) {
+	c := getClient(t)
+
+	_, err := c.GetFileInfoByID("jhgvcfgcgvhjhbjvghcf")
+	if e, ok := b2.UnwrapError(err); !ok || e == nil {
+		t.Fatalf("%T %v", err, err)
+	}
+
+	if err, ok := b2.UnwrapError(nil); ok || err != nil {
+		t.Fatal(err)
+	}
+
+	if err, ok := b2.UnwrapError(errors.New("test")); ok || err != nil {
+		t.Fatal(err)
 	}
 }
