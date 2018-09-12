@@ -316,7 +316,7 @@ func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo,
 // Buckets returns a list of buckets sorted by name.
 func (c *Client) Buckets() ([]*BucketInfo, error) {
 	res, err := c.doRequest("b2_list_buckets", map[string]interface{}{
-		"accountId": c.LoginInfo.AccountID,
+		"accountId": c.loginInfo.Load().(*LoginInfo).AccountID,
 	})
 	if err != nil {
 		return nil, err
@@ -352,7 +352,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 		bucketType = "allPublic"
 	}
 	res, err := c.doRequest("b2_create_bucket", map[string]interface{}{
-		"accountId":  c.LoginInfo.AccountID,
+		"accountId":  c.loginInfo.Load().(*LoginInfo).AccountID,
 		"bucketName": name,
 		"bucketType": bucketType,
 	})
@@ -379,7 +379,7 @@ func (c *Client) CreateBucket(name string, allPublic bool) (*BucketInfo, error) 
 // becomes invalid and any other calls will fail.
 func (b *Bucket) Delete() error {
 	res, err := b.c.doRequest("b2_delete_bucket", map[string]interface{}{
-		"accountId": b.c.LoginInfo.AccountID,
+		"accountId": b.c.loginInfo.Load().(*LoginInfo).AccountID,
 		"bucketId":  b.ID,
 	})
 	if err != nil {
