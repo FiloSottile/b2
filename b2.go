@@ -236,7 +236,7 @@ func (c *Client) doRequest(endpoint string, params map[string]interface{}) (*htt
 		return nil, err
 	}
 	// Reduce debug log noise
-	delete(params, "accountID")
+	// delete(params, "accountID")
 	delete(params, "bucketID")
 
 	apiURL := c.loginInfo.Load().(*LoginInfo).ApiURL
@@ -298,7 +298,7 @@ func (c *Client) BucketByID(id string) *Bucket {
 // found and createIfNotExists is true, CreateBucket is called with allPublic set
 // to false. Otherwise, an error is returned.
 func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo, error) {
-	bs, err := c.Buckets()
+	bs, err := c.Buckets(name)
 	if err != nil {
 		return nil, err
 	}
@@ -314,9 +314,10 @@ func (c *Client) BucketByName(name string, createIfNotExists bool) (*BucketInfo,
 }
 
 // Buckets returns a list of buckets sorted by name.
-func (c *Client) Buckets() ([]*BucketInfo, error) {
+func (c *Client) Buckets(name string) ([]*BucketInfo, error) {
 	res, err := c.doRequest("b2_list_buckets", map[string]interface{}{
 		"accountId": c.loginInfo.Load().(*LoginInfo).AccountID,
+		"bucketName": name,
 	})
 	if err != nil {
 		return nil, err
